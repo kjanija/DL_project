@@ -92,11 +92,28 @@ def create_dataframe(directory):
 
     return df
 
+def crop_to_brain(img):
+    """
+    Crop the image to the brain region.
+    
+    We do this since the MRI jpgs have HUGE black borders around the brain. An
+    alternative would be to mask the image where values of gray ara > 0.05, But
+    this would mask regions inside the brain where there are such values
+    """
+    mask = img != 0
+    rows = np.any(mask, axis=1)
+    cols = np.any(mask, axis=0)
+    rowmin, rowmax = np.where(rows)[0][[0, -1]]
+    colmin, colmax = np.where(cols)[0][[0, -1]]
+
+    return img[rowmin:rowmax+1, colmin:colmax+1]
+
 def mri_jpg_to_graph(mri_path, n_segments=100):
     """
     Create the graph for a single layer of an MRI image
     """
     img = imread(mri_path)
+    img = crop_to_brain(img)
     gray = rgb2gray(img)
 
     segments = slic(img, n_segments=n_segments, compactness=10, start_label=0)

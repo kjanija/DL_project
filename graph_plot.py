@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 from skimage.io import imread
 from skimage.segmentation import mark_boundaries
+from dataset import crop_to_brain
 
 def visualize_data_object(data, original_img_path):
     """
@@ -9,6 +10,7 @@ def visualize_data_object(data, original_img_path):
     """
     # Load image
     img = imread(original_img_path)
+    img = crop_to_brain(img)
 
     # Convert PyG edge_index to NetworkX format
     edge_index = data.edge_index.numpy()
@@ -53,7 +55,7 @@ def visualize_data_object_full(data, img_path, n_segments=100):
     """
     # Load image and convert to grayscale
     img = imread(img_path)
-    gray = rgb2gray(img)
+    img = crop_to_brain(img)
 
     # Recreate superpixels
     segments = slic(img, n_segments=n_segments, compactness=10, start_label=0)
