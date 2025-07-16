@@ -131,7 +131,9 @@ def mri_jpg_to_graph(mri_path, n_segments=100):
         node_features.append([mean_intensity])  
         positions.append([centroid[1], centroid[0]]) # [x, y]
 
-    x = torch.tensor(node_features, dtype=torch.float)
+    node_feats = torch.tensor(node_features, dtype=torch.float)
+    print(f"x.shape:{node_feats.shape}")
+    print(f"x:{node_feats}")
     pos = torch.tensor(positions, dtype=torch.float)
 
     # Now let's create the edges between segments
@@ -154,7 +156,7 @@ def mri_jpg_to_graph(mri_path, n_segments=100):
 
     edge_index = torch.tensor(list(edges), dtype=torch.long).t().contiguous()
 
-    return Data(x=x, edge_index=edge_index, pos=pos)
+    return Data(x=node_feats, edge_index=edge_index, pos=pos)
 
 
 # We define the following class by extending torch_geometric's Dataset
