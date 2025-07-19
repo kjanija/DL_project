@@ -108,7 +108,7 @@ def crop_to_brain(img):
 
     return img[rowmin:rowmax+1, colmin:colmax+1]
 
-def mri_jpg_to_graph(mri_path, n_segments=100):
+def mri_jpg_to_graph(mri_path, n_segments=30):
     """
     Create the graph for a single layer of an MRI image
     """
@@ -132,8 +132,8 @@ def mri_jpg_to_graph(mri_path, n_segments=100):
         positions.append([centroid[1], centroid[0]]) # [x, y]
 
     node_feats = torch.tensor(node_features, dtype=torch.float)
-    print(f"x.shape:{node_feats.shape}")
-    print(f"x:{node_feats}")
+    # print(f"x.shape:{node_feats.shape}")
+    # print(f"x:{node_feats}")
     pos = torch.tensor(positions, dtype=torch.float)
 
     # Now let's create the edges between segments
@@ -210,4 +210,4 @@ if __name__ == "__main__":
     # visualize_data_object(graph, df['path'][sample_idx])
 
     from graph_plot import visualize_data_object_full
-    visualize_data_object_full(graph, df['path'][sample_idx], n_segments=100)
+    visualize_data_object_full(graph, df['path'][sample_idx], n_segments=30)
