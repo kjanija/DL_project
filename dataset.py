@@ -8,6 +8,7 @@ import numpy as np
 from sympy import comp
 import torch
 from torch_geometric.data import Data, Dataset
+from sklearn.model_selection import StratifiedGroupKFold
 
 def get_filenames(directory):
     """
@@ -49,7 +50,7 @@ def extract_MRI_info(filename):
 
     return patient, mri, scan, layer
 
-def create_dataframe(directory):
+def create_dataframe(directory, merge_moderate_dementia=True):
     """
     Create pandas dataframe for the dataset
     """
@@ -90,7 +91,37 @@ def create_dataframe(directory):
         'layer': 'int64'
     })
 
+    if merge_moderate_dementia:
+        df['target'] = df['target'].replace({'Moderate Dementia': 'Mild Dementia'})
+
     return df
+
+def stratified_patient_split(df, test_size=0.25, random_state=42):
+    """
+    Split dataframe into train and test, with particular attention given to: 
+        - patient ids (we don't want half of a patients data to be in train and half in test)
+        - target labels (we want to keep the same distribution of the 'target' variable) 
+    """
+
+    patient_df = df.groupby('patient').agg({
+        'target': 'first'
+    }).reset_index()
+
+    stratified_g_kf = StratifiedGroupKFold(
+        n_splits=int(1/test_size),
+        shuffle=True,
+        random_state=random_state
+    )
+    splits = list(stratified_g_kf.split(X=patient_df, y=patient_df['target'], groups=patient_df['patient']))
+    train_idx, test_idx = splits[0]
+
+    train_patients = patient_df.iloc[train_idx]['patient']
+    test_patients= patient_df.iloc[test_idx]['patient']
+    
+    train_df = df[df['patient'].isin(train_patients)].reset_index(drop=True)
+    test_df = df[df['patient'].isin(test_patients)].reset_index(drop=True)
+
+    return train_df, test_df
 
 def crop_to_brain(img):
     """
@@ -182,6 +213,7 @@ class MRIDataset(Dataset):
         return graph
 
 if __name__ == "__main__":
+    import time
     directory = './Data'
 
     print("################################################################")
@@ -206,8 +238,42 @@ if __name__ == "__main__":
     graph = dataset[sample_idx]
     print(graph)
 
-    from graph_plot import visualize_data_object
-    # visualize_data_object(graph, df['path'][sample_idx])
+    # from graph_plot import visualize_data_object
+    # # visualize_data_object(graph, df['path'][sample_idx])
 
-    from graph_plot import visualize_data_object_full
-    visualize_data_object_full(graph, df['path'][sample_idx], n_segments=30)
+    # from graph_plot import visualize_data_object_full
+    # visualize_data_object_full(graph, df['path'][sample_idx], n_segments=30)
+
+    # Check consistency of target labels
+    print("################################################################")
+    inconsistent = (
+        df.groupby('patient')['target']
+        .nunique()
+        .reset_index()
+        .query('target > 1')
+    )
+
+    if inconsistent.empty:
+        print("We are ok! One diagnosis per patient")
+    else:
+        print("There are patients with multiple diagnoses")
+        print(inconsistent)
+
+    print("################################################################")
+    print(f"len(full_df): {len(df)}")
+    print(
+        df.groupby('patient')['target'].first().value_counts()
+    )
+    start = time.time()
+    train_df, test_df = stratified_patient_split(df)
+    end = time.time()
+    print(f"Time taken for split: {end-start} s")
+    print(f"len(train_df): {len(train_df)}")
+    print(
+        train_df.groupby('patient')['target'].first().value_counts()
+    )
+    print(f"len(test_df): {len(test_df)}")
+    print(
+        test_df.groupby('patient')['target'].first().value_counts()
+    )
+    print(f"len(train)+len(test): {len(train_df)+len(test_df)}")
