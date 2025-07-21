@@ -9,6 +9,7 @@ from sympy import comp
 import torch
 from torch_geometric.data import Data, Dataset
 from sklearn.model_selection import StratifiedGroupKFold
+from yaml import scan
 
 def get_filenames(directory):
     """
@@ -36,9 +37,9 @@ def extract_MRI_info(filename):
 
     We will do this using regular expressions
     """
-
+    basename = os.path.basename(filename)
     re_pattern = re.compile(r'OAS1_(\d+)_MR(\d+)_mpr-(\d+)_(\d+).jpg')
-    match = re_pattern.match(filename)
+    match = re_pattern.match(basename)
     patient = match.group(1)
     mri = match.group(2)
     scan = match.group(3)
@@ -70,7 +71,7 @@ def create_dataframe(directory, merge_moderate_dementia=True):
             targets.append(category)
             patients.append(patient)
             mris.append(mri)
-            scans.append(mri)
+            scans.append(scan)
             layers.append(layer)
 
     df = pd.DataFrame({
@@ -211,28 +212,57 @@ class MRIDataset(Dataset):
         graph = mri_jpg_to_graph(row['path'])
         graph.y = torch.tensor([self.label_map[row['target']]], dtype=torch.long)
         return graph
+    
+class MRISeqDataset(torch.utils.data.Dataset):
+    def __init__(self, dataframe, n_segments):
+        self.scans = dataframe.groupby(['patient', 'mri', 'scan'])
+        self.samples = list(self.scans)
+        self.label_map = {
+            'Non Demented': 0,
+            'Very mild Dementia': 1,
+            'Mild Dementia': 2,
+            'Moderate Dementia': 3
+        }
+        self.n_segs = n_segments
+
+    def __len__(self):
+        return len(self.samples)
+    
+    def __getitem__(self, idx):
+        _, scan = self.samples[idx]
+        label = scan['target'].iloc[0]
+
+        graphs = []
+        for _, row in scan.sort_values('layer').iterrows():
+            graphs.append(mri_jpg_to_graph(row['path']))
+
+        return graphs, torch.tensor(self.label_map[label], dtype=torch.long)
+    
+def custom_collate(batch):
+    sequences, labels = zip(*batch) # List with elements as: (List[Data], label)
+    return list(sequences), torch.stack(labels)
 
 if __name__ == "__main__":
     import time
     directory = './Data'
 
-    print("################################################################")
+    print("#####################Directory check#################################")
     filenames = get_filenames(directory)
     for category in filenames.keys():
         print(f'{category}: #filenames = {len(filenames[category])}')
         # print(filenames[category][:5])
 
-    print("################################################################")
+    print("####################Regex check######################################")
     test = filenames['Non Demented'][30000:30002]
     for item in test:
         print(item)
         print(extract_MRI_info(item))
 
-    print("################################################################")
+    print("#####################Df creation check###############################")
     df = create_dataframe(directory)
     print(df.head())
 
-    print("################################################################")
+    print("#####################Dataset check###################################")
     dataset = MRIDataset(df)
     sample_idx=3000
     graph = dataset[sample_idx]
@@ -245,7 +275,7 @@ if __name__ == "__main__":
     # visualize_data_object_full(graph, df['path'][sample_idx], n_segments=30)
 
     # Check consistency of target labels
-    print("################################################################")
+    print("################Label consistency check##############################")
     inconsistent = (
         df.groupby('patient')['target']
         .nunique()
@@ -259,7 +289,7 @@ if __name__ == "__main__":
         print("There are patients with multiple diagnoses")
         print(inconsistent)
 
-    print("################################################################")
+    print("######################unique patients check##########################")
     print(f"len(full_df): {len(df)}")
     print(
         df.groupby('patient')['target'].first().value_counts()
@@ -277,3 +307,27 @@ if __name__ == "__main__":
         test_df.groupby('patient')['target'].first().value_counts()
     )
     print(f"len(train)+len(test): {len(train_df)+len(test_df)}")
+
+    print("##################SeqDataset check##############################################")
+    from torch.utils.data import DataLoader
+    dataframe = create_dataframe(directory)
+    seq_dataset = MRISeqDataset(dataframe, 20)
+
+    print(f"len(seq_dataset): {len(seq_dataset)}")
+    loader = DataLoader(seq_dataset, 2, shuffle=True, collate_fn=custom_collate)
+
+    start = time.time()
+    batch = next(iter(loader))
+    end = time.time()
+    print(f"Time to load first iter: {end-start} s")
+    seqs, labels = batch
+    print("Loaded Batch n.1:")
+    print(f"Labels: {labels} Num Sequences:{len(seqs)}")
+    for i, seq in enumerate(seqs):
+        print(f"len of seq n.{i}: {len(seq)}")
+    batch = next(iter(loader))
+    seqs, labels = batch
+    print("Loaded Batch n.2:")
+    print(f"Labels: {labels} Num Sequences:{len(seqs)}")
+    for i, seq in enumerate(seqs):
+        print(f"len of seq n.{i}: {len(seq)}")
