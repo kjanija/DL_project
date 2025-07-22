@@ -4,12 +4,14 @@ import pandas as pd
 from skimage.segmentation import slic
 from skimage.color import rgb2gray
 from skimage.io import imread
+from skimage.measure import perimeter
 import numpy as np
 from sympy import comp
 import torch
 from torch_geometric.data import Data, Dataset
 from sklearn.model_selection import StratifiedGroupKFold
 from yaml import scan
+import time
 
 def get_filenames(directory):
     """
@@ -152,15 +154,23 @@ def mri_jpg_to_graph(mri_path, n_segments=30):
 
     node_features = []
     positions = []
+    total_pixels = gray.size
 
     # We get the features (mean intensity for now, we could do more later) for
     # each segment. Note that we save also the coordinate of the centroid of such segment
     for segment in np.unique(segments):
         mask = segments == segment                              # we are interested only in the current segment
-        mean_intensity = np.mean(gray[mask])                    # get the mean in the current segment
+        mean_intensity = np.mean(gray[mask])                    # get the mean and other features in the current segment
+        var_intensity = np.var(gray[mask])
+        area = np.sum(mask) / total_pixels
+        # perim = perimeter(mask)
         yx_coords = np.argwhere(mask)
         centroid = np.mean(yx_coords, axis=0) # [y, x]          # calc the centroid of the segment
-        node_features.append([mean_intensity])  
+        node_features.append([
+            mean_intensity,
+            var_intensity,
+            area
+        ])  
         positions.append([centroid[1], centroid[0]]) # [x, y]
 
     node_feats = torch.tensor(node_features, dtype=torch.float)
@@ -168,25 +178,27 @@ def mri_jpg_to_graph(mri_path, n_segments=30):
     # print(f"x:{node_feats}")
     pos = torch.tensor(positions, dtype=torch.float)
 
-    # Now let's create the edges between segments
-    heigth, width = segments.shape
-    edges = set()
 
-    # We'll be adding them by starting from the top left and proceeding to bottom-right
-    for y in range(heigth-1):
-        for x in range(width-1):
-            curr = segments[y, x]
-            right = segments[y, x+1]
-            down = segments[y+1, x]
+    start = time.time()
+    adj = set()
 
-            if curr != right:
-                edges.add((curr, right))
-                edges.add((right, curr))
-            if curr != down:
-                edges.add((curr, down))
-                edges.add((down, curr))
+    # horizontal neighbors
+    diff_right = segments[:,:-1] != segments[:, 1:]
+    edges_right = np.stack([segments[:, :-1][diff_right], segments[:, 1:][diff_right]], axis=1)
+    for edge in edges_right:
+        adj.add((edge[0], edge[1]))
+        adj.add((edge[1], edge[0]))
 
-    edge_index = torch.tensor(list(edges), dtype=torch.long).t().contiguous()
+    # vertical neighbors
+    diff_down = segments[:-1, :] != segments[1:, :]
+    edges_down = np.stack([segments[:-1, :][diff_down], segments[1:, :][diff_down]], axis=1)
+    for edge in edges_down:
+        adj.add((edge[0], edge[1]))
+        adj.add((edge[1], edge[0]))
+
+    edge_index = torch.tensor(list(adj),dtype=torch.long).t().contiguous()
+    end = time.time()
+    print(f"New edge construction: {end-start}")
 
     return Data(x=node_feats, edge_index=edge_index, pos=pos)
 
@@ -244,6 +256,7 @@ def custom_collate(batch):
 
 if __name__ == "__main__":
     import time
+    import sys
     directory = './Data'
 
     print("#####################Directory check#################################")
@@ -266,13 +279,14 @@ if __name__ == "__main__":
     dataset = MRIDataset(df)
     sample_idx=3000
     graph = dataset[sample_idx]
-    print(graph)
 
     # from graph_plot import visualize_data_object
     # # visualize_data_object(graph, df['path'][sample_idx])
 
-    # from graph_plot import visualize_data_object_full
-    # visualize_data_object_full(graph, df['path'][sample_idx], n_segments=30)
+    from graph_plot import visualize_data_object_full
+    visualize_data_object_full(graph, df['path'][sample_idx], n_segments=30)
+
+    sys.exit()
 
     # Check consistency of target labels
     print("################Label consistency check##############################")
