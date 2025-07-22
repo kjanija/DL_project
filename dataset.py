@@ -12,6 +12,7 @@ from torch_geometric.data import Data, Dataset
 from sklearn.model_selection import StratifiedGroupKFold
 from yaml import scan
 import time
+from scipy.ndimage import center_of_mass, mean, variance
 
 def get_filenames(directory):
     """
@@ -152,34 +153,23 @@ def mri_jpg_to_graph(mri_path, n_segments=30):
 
     segments = slic(img, n_segments=n_segments, compactness=10, start_label=0)
 
-    node_features = []
-    positions = []
     total_pixels = gray.size
+    num_segs = segments.max() + 1
+    total_pixels = gray.size
+    mean_intensities = mean(gray, labels=segments, index=np.arange(num_segs))
+    var_intensities = variance(gray, labels=segments, index=np.arange(num_segs))
+    areas = np.bincount(segments.ravel()) / total_pixels
+    centroids = center_of_mass(np.ones_like(gray), labels=segments, index=np.arange(num_segs))
 
-    # We get the features (mean intensity for now, we could do more later) for
-    # each segment. Note that we save also the coordinate of the centroid of such segment
-    for segment in np.unique(segments):
-        mask = segments == segment                              # we are interested only in the current segment
-        mean_intensity = np.mean(gray[mask])                    # get the mean and other features in the current segment
-        var_intensity = np.var(gray[mask])
-        area = np.sum(mask) / total_pixels
-        # perim = perimeter(mask)
-        yx_coords = np.argwhere(mask)
-        centroid = np.mean(yx_coords, axis=0) # [y, x]          # calc the centroid of the segment
-        node_features.append([
-            mean_intensity,
-            var_intensity,
-            area
-        ])  
-        positions.append([centroid[1], centroid[0]]) # [x, y]
+    node_feats = torch.tensor(
+        np.stack([mean_intensities, var_intensities, areas], axis=1), 
+        dtype=torch.float
+    )
+    pos = torch.tensor(
+        np.array([[c[1], c[0]] for c in centroids]), 
+        dtype=torch.float
+    )
 
-    node_feats = torch.tensor(node_features, dtype=torch.float)
-    # print(f"x.shape:{node_feats.shape}")
-    # print(f"x:{node_feats}")
-    pos = torch.tensor(positions, dtype=torch.float)
-
-
-    start = time.time()
     adj = set()
 
     # horizontal neighbors
@@ -197,8 +187,6 @@ def mri_jpg_to_graph(mri_path, n_segments=30):
         adj.add((edge[1], edge[0]))
 
     edge_index = torch.tensor(list(adj),dtype=torch.long).t().contiguous()
-    end = time.time()
-    print(f"New edge construction: {end-start}")
 
     return Data(x=node_feats, edge_index=edge_index, pos=pos)
 
@@ -283,10 +271,8 @@ if __name__ == "__main__":
     # from graph_plot import visualize_data_object
     # # visualize_data_object(graph, df['path'][sample_idx])
 
-    from graph_plot import visualize_data_object_full
-    visualize_data_object_full(graph, df['path'][sample_idx], n_segments=30)
-
-    sys.exit()
+    # from graph_plot import visualize_data_object_full
+    # visualize_data_object_full(graph, df['path'][sample_idx], n_segments=30)
 
     # Check consistency of target labels
     print("################Label consistency check##############################")
