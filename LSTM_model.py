@@ -12,7 +12,7 @@ class LSTMModel(nn.Module):
         self.classifier = nn.Linear(lsmt_hidden, num_classes)
 
     def forward(self, sequences):
-        
+
         # sequences is a list of length BATCH_SIZE
         # each item is a list of slice graphs for a patient scan
         batch_embeddings = []
@@ -22,8 +22,8 @@ class LSTMModel(nn.Module):
 
             for graph in sequence:  # loop over slices in that patient's scan
                 graph = graph.to(next(self.parameters()).device)
-                if not hasattr(graph, 'batch'):
-                    graph.batch = torch.zeros(graph.num_nodes, dtype=torch.long).to(graph.x.device)
+                
+                graph.batch = torch.zeros(graph.num_nodes, dtype=torch.long).to(graph.x.device)
 
                 emb = self.gat_encoder(graph.x, graph.edge_index, graph.batch)  # [1, gat_hidden]
                 slice_embeddings.append(emb)

@@ -10,7 +10,6 @@ from sympy import comp
 import torch
 from torch_geometric.data import Data, Dataset
 from sklearn.model_selection import StratifiedGroupKFold
-from yaml import scan
 import time
 from scipy.ndimage import center_of_mass, mean, variance
 
