@@ -1,5 +1,6 @@
 # Code for the LSTM model
 
+from multiprocessing import pool
 import torch
 import torch.nn as nn
 from GAT_model import GATModel
@@ -8,8 +9,14 @@ class LSTMModel(nn.Module):
     def __init__(self, in_channels, hidden_channels, lsmt_hidden, num_classes):
         super(LSTMModel, self).__init__()
         self.gat_encoder = GATModel(in_channels, hidden_channels)
-        self.lstm = nn.LSTM(input_size=hidden_channels, hidden_size=lsmt_hidden, batch_first=True)
-        self.classifier = nn.Linear(lsmt_hidden, num_classes)
+        self.lstm = nn.LSTM(input_size=hidden_channels, hidden_size=lsmt_hidden, batch_first=True, bidirectional=True)
+        self.dim_red = nn.Sequential(
+            nn.Linear(int(lsmt_hidden*2), lsmt_hidden),
+            nn.ReLU(),
+            nn.Linear(lsmt_hidden, int(lsmt_hidden/3)),
+            nn.ReLU,
+        )
+        self.classifier = nn.Linear(lsmt_hidden/3, num_classes)
 
     def forward(self, sequences):
 
@@ -34,8 +41,13 @@ class LSTMModel(nn.Module):
         # [batch_size, num_slices, gat_hidden]
         batch_embeddings = torch.cat(batch_embeddings, dim=0)
 
-        # LSTM output: take final hidden state
-        _, (h_n, _) = self.lstm(batch_embeddings)  # h_n: [1, batch_size, lstm_hidden]
-        output = self.classifier(h_n.squeeze(0))   # [batch_size, num_classes]
+        # # LSTM output: take final hidden state
+        # _, (h_n, _) = self.lstm(batch_embeddings)  # h_n: [1, batch_size, lstm_hidden]
+        # output = self.classifier(h_n.squeeze(0))   # [batch_size, num_classes]
+
+        lstm_out, _ = self.lstm(batch_embeddings)
+        pooled = torch.mean(lstm_out, dim=1)
+        reduced = self.dim_red(pooled)
+        output = self.classifier(reduced)
 
         return output
