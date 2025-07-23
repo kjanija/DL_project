@@ -220,7 +220,6 @@ class MRISeqDataset(torch.utils.data.Dataset):
             'Non Demented': 0,
             'Very mild Dementia': 1,
             'Mild Dementia': 2,
-            'Moderate Dementia': 3
         }
         self.n_segs = n_segments
 
